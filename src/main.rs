@@ -1,41 +1,49 @@
 use chrono::{NaiveDate, Datelike};
-use std::cmp::Ordering;
-use std::time::Instant;
+use std::{cmp::Reverse, time::Instant, collections::BinaryHeap};
+use ordered_float::NotNan;
+
+type ReverseFloat = Reverse<NotNan<f64>>;
+
+#[derive(Eq, PartialEq, Ord, PartialOrd)]
+struct FoolishDate(ReverseFloat, NaiveDate);
+
+const DAYS_IN_YEAR: usize = 365;
 
 fn main() {
     let start = Instant::now();
-    
-    let apr_foolish = foolish(&NaiveDate::from_ymd(2022, 4, 1));
-    let mut dates: Vec<NaiveDate> =  NaiveDate::from_ymd(2022, 1, 1)
-        .iter_days()
-        .take(365)
-        .collect();
 
-    dates.sort_by(|d1, d2| foolish_cmp(foolish(d1), foolish(d2), apr_foolish));
-    // dates[0] is 1 Apr 2022, dates[1] is the next closest
+    let apr = foolish(NaiveDate::from_ymd(2022, 4, 1));
+
+    let mut min_heap = BinaryHeap::with_capacity(DAYS_IN_YEAR);
+
+    let dates = NaiveDate::from_ymd(2022, 1, 1)
+        .iter_days()
+        .take(DAYS_IN_YEAR);
+
+    for d in dates {
+        let f = NotNan::new((foolish(d) - apr).abs()).unwrap();
+        min_heap.push(FoolishDate(Reverse(f), d));
+    }
 
     let duration = start.elapsed();
 
-    println!("{} in {}ms", dates[1], duration.as_micros());
+    min_heap.pop(); // this is 1 Apr 2022
+    if let Some(d) = min_heap.pop() { // this is closest to 1 Apr 2022
+        println!("Found {} in {}ms", d.1, duration.as_micros());
+    }
 }
 
-fn foolish_cmp(a: f64, b: f64, o: f64) -> Ordering
-{
-    let a = (a - o).abs();
-    let b = (b - o).abs();
-    
-    a.partial_cmp(&b).unwrap()
-}
-
-fn foolish(date: &NaiveDate) -> f64 {
+fn foolish(date: NaiveDate) -> f64 {
     let day = date.day() as f64;
     let month = date.month() as f64;
-    let year = date.year() as f64;
-    let year = year - 2000.0;
+    let year = (date.year() - 2000) as f64;
 
+    // Do some algebra to rewrite eqn as quadratic in F
+    // a, b, c are the coeffs
     let a = day * month + year;
     let b = day.powi(2) - month.powi(2) - year.powi(2) - day * month * year;
     let c = - day.powi(2) * year - day * month;
 
+    // solve the quadratic
     (-b + (b.powi(2) - 4.0 * a * c).sqrt()) / (2.0 * a)
 }
